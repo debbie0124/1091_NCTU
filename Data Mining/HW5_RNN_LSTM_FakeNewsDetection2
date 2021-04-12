@@ -1,0 +1,132 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Thu Dec 17 01:05:35 2020
+
+@author: User
+"""
+
+from keras.preprocessing import sequence
+from keras.preprocessing.text import Tokenizer
+
+import pandas as pd
+
+from keras.models import Sequential
+from keras.layers.core import Dense, Dropout, Activation, Flatten
+from keras.layers.embeddings import Embedding
+from keras.layers.recurrent import SimpleRNN
+from keras.layers.recurrent import LSTM
+
+import matplotlib.pyplot as plt
+
+def show_train_history(train_history, train, test, model):
+    plt.plot(train_history.history[train])
+    plt.plot(train_history.history[test])
+    plt.title(model + ' Train History')
+    plt.ylabel(train)
+    plt.xlabel('Epoch')
+    plt.legend(['train', 'test'], loc='upper left')
+    plt.show()
+
+
+train = pd.read_csv('train.csv', delimiter='\t')
+test = pd.read_csv('test.csv', delimiter='\t')
+label = pd.read_csv('sample_submission (1).csv')
+
+train = train[(train.label == '0') | (train.label == '1')]
+train['label'] = train['label'].apply(lambda x: int(x))
+trainText = train['text']
+y_train = train['label']
+
+test = pd.merge(test, label, on='id', how='inner')
+testText = test['text']
+y_test = test['label']
+
+#%%
+token = Tokenizer(num_words=3800)
+token.fit_on_texts(trainText)
+token.word_index
+
+X_train_seq = token.texts_to_sequences(trainText)
+X_test_seq = token.texts_to_sequences(testText)
+
+X_train = sequence.pad_sequences(X_train_seq, maxlen=380)
+X_test = sequence.pad_sequences(X_test_seq, maxlen=380)
+
+#%%
+
+### RNN
+
+modelRNN = Sequential()
+modelRNN.add(Embedding(output_dim=32, 
+                      input_dim=3800, 
+                      input_length=380))
+modelRNN.add(Dropout(0.7))
+# modelRNN.add(Flatten())
+modelRNN.add(SimpleRNN(units=16))
+modelRNN.add(Dropout(0.7))
+modelRNN.add(Dense(units=256, activation='relu'))
+modelRNN.add(Dropout(0.7))
+modelRNN.add(Dense(units=256, activation='relu'))
+modelRNN.add(Dropout(0.7))
+modelRNN.add(Dense(units=1, activation='sigmoid'))
+modelRNN.summary()
+
+modelRNN.compile(loss='binary_crossentropy', 
+                optimizer='adam', 
+                metrics=['accuracy'])
+
+train_historyRNN = modelRNN.fit(X_train, y_train, 
+                            epochs=20, 
+                            batch_size=100, 
+                            verbose=2, 
+                            validation_split=0.2)
+scoresRNN = modelRNN.evaluate(X_test, y_test, verbose=1)
+
+print('accurancy: ', scoresRNN[1])
+
+show_train_history(train_historyRNN, 'accuracy', 'val_accuracy', 'RNN')
+show_train_history(train_historyRNN, 'loss', 'val_loss', 'RNN')
+
+
+
+#%%
+
+### LSTM
+
+modelLSTM = Sequential()
+modelLSTM.add(Embedding(output_dim=32, 
+                       input_dim=3800, 
+                       input_length=380))
+modelLSTM.add(Dropout(0.7))
+modelLSTM.add(LSTM(32))
+modelLSTM.add(Dropout(0.7))
+modelLSTM.add(Dense(units=256, activation='relu'))
+modelLSTM.add(Dropout(0.7))
+modelLSTM.add(Dense(units=256, activation='relu'))
+modelLSTM.add(Dropout(0.7))
+modelLSTM.add(Dense(units=1, activation='sigmoid'))
+
+
+modelLSTM.summary()
+modelLSTM.compile(loss='binary_crossentropy', 
+                optimizer='adam', 
+                metrics=['accuracy'])
+
+train_historyLSTM = modelLSTM.fit(X_train, y_train, 
+                            epochs=20, 
+                            batch_size=100, 
+                            verbose=2, 
+                            validation_split=0.2)
+scoresLSTM = modelLSTM.evaluate(X_test, y_test, verbose=1)
+
+print('accurancy: ', scoresLSTM[1])
+
+show_train_history(train_historyLSTM, 'accuracy', 'val_accuracy', 'LSTM')
+show_train_history(train_historyLSTM, 'loss', 'val_loss', 'LSTM')
+
+
+
+
+
+
+
