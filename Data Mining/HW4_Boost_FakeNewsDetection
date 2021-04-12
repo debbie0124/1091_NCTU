@@ -1,0 +1,104 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Thu Dec 10 13:31:06 2020
+
+@author: User
+"""
+
+import pandas as pd
+from sklearn.feature_extraction.text import TfidfVectorizer
+from nltk.corpus import stopwords
+
+# import xgboost as xgb
+from xgboost import XGBClassifier
+from sklearn.ensemble import GradientBoostingClassifier
+from lightgbm import LGBMClassifier
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+
+### 資料前處理
+train = pd.read_csv('train.csv', delimiter='\t')
+test = pd.read_csv('test.csv', delimiter='\t')
+label = pd.read_csv('sample_submission.csv')
+
+# 移除不符合格式資料
+train = train[(train.label == '0') | (train.label == '1')]
+train['label'] = train['label'].apply(lambda x: int(x))
+
+# 訓練集與測試集切分
+X_train = train['text']
+y_train = train['label']
+test = pd.merge(test, label, on='id', how='inner')
+X_test = test['text']
+y_test = test['label']
+
+# 利用 NLTK 套件建立 stopwords
+stopWords = set(stopwords.words('english'))
+
+# 建立訓練集與測試集之 term vector
+vectorizer = TfidfVectorizer(stop_words=stopWords)
+X_train_vector = vectorizer.fit_transform(X_train)
+X_train_matrix = pd.DataFrame(X_train_vector.toarray(),columns=vectorizer.get_feature_names())
+X_test_vector = vectorizer.transform(X_test)
+X_test_matrix = pd.DataFrame(X_test_vector.toarray(), columns=vectorizer.get_feature_names())
+
+### XGBoost
+print('XGBoost: ')
+xgbc = XGBClassifier(learning_rate=0.2, 
+                     max_depth=6,
+                     objective='multi:softmax',
+                     num_class=2,
+                     n_estimators=20,
+                     seed=10)
+xgbc.fit(X_train_matrix, y_train)
+y_pred = xgbc.predict(X_test_matrix)
+print('Accuracy: ', accuracy_score(y_test, y_pred))
+print('Precision: ', precision_score(y_test, y_pred))
+print('Recall: ', recall_score(y_test, y_pred))
+print('F-Measure: ', f1_score(y_test, y_pred))
+
+
+### GBDT
+print('GBDT: ')
+gbc = GradientBoostingClassifier(learning_rate=0.2, 
+                                 max_depth=6,
+                                 n_estimators=20,
+                                 random_state=10)
+gbc.fit(X_train_matrix, y_train)
+y_pred = gbc.predict(X_test_matrix)
+print('Accuracy: ', accuracy_score(y_test, y_pred))
+print('Precision: ', precision_score(y_test, y_pred))
+print('Recall: ', recall_score(y_test, y_pred))
+print('F-Measure: ', f1_score(y_test, y_pred))
+
+### lightGBM
+print('lightGBM: ')
+lgbmc = LGBMClassifier(learning_rate=0.2, 
+                       max_depth=6,
+                       objective='binary',
+                       n_estimators=20,
+                       # num_iterations=20,
+                       random_state=10)
+lgbmc.fit(X_train_matrix, y_train)
+y_pred = lgbmc.predict(X_test_matrix)
+print('Accuracy: ', accuracy_score(y_test, y_pred))
+print('Precision: ', precision_score(y_test, y_pred))
+print('Recall: ', recall_score(y_test, y_pred))
+print('F-Measure: ', f1_score(y_test, y_pred))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
