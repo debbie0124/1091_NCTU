@@ -1,0 +1,72 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Thu Oct 29 14:58:22 2020
+
+@author: User
+"""
+
+import pandas as pd
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score
+
+
+### K-fold function
+def K_fold_CV(k, data):
+    subsize = len(data) // k    # subset size
+    Accuracy = 0          # initial value
+    for i in range(k):
+        # 設定 testing set 與 training set 的資料起始點與結束點
+        if i == k-1:
+            test = data.iloc[subsize*i :]
+            train = data.drop(test.index)
+        else:
+            test = data.iloc[subsize*i : subsize*(i+1)]
+            train = data.drop(test.index)
+        
+        # 利用 training set 建立模型
+        X_train = train.drop(['income'], axis=1)
+        y_train = train['income']
+        X_test = test.drop(['income'], axis=1)
+        y_test = test['income']
+        
+        rfc = RandomForestClassifier(criterion='entropy', 
+                             n_estimators=1000, 
+                             min_samples_split=12, 
+                             min_samples_leaf=1, 
+                             oob_score=True, 
+                             random_state=1, 
+                             n_jobs=-1)
+        rfc.fit(X_train, y_train)
+        
+        # testing set 計算出 Accuracy 累加
+        print('k = ', i+1)
+        y_predict = rfc.predict(X_test)
+        print('Accuracy: ', accuracy_score(y_test, y_predict))
+        Accuracy += accuracy_score(y_test, y_predict)
+    return Accuracy/k
+
+data = pd.read_csv('HW2data.csv')
+
+### 資料前處理
+# 將資料前空白清除
+for i in data.columns:
+    data[i] = data[i].apply(lambda x: x.lstrip() if type(x) == str else x)
+    data[i] = data[i].apply(lambda x: None if x == '?' else x)
+
+# 轉換二元分類欄位
+data['income'] = data['income'].apply(lambda x: 1 if x == '>50K' else 0)
+data['sex'] = data['sex'].apply(lambda x: 1 if x == 'Male' else 0)
+
+# education, education_num 
+pd.crosstab(data.education, data.education_num, margins=True)
+
+# 刪除不需要的欄位
+data = data.drop(['education'], axis=1)
+data = data.drop(['fnlwgt'], axis=1)
+
+# 將類別欄位內容展開
+data_dummies = pd.get_dummies(data)
+
+### 計算 k=10 的 Accuracy
+K_fold_CV(10, data_dummies)
+
