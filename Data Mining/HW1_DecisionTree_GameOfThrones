@@ -1,0 +1,72 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Fri Oct  2 17:36:53 2020
+
+@author: User
+"""
+
+import pandas as pd
+from sklearn import tree
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import confusion_matrix
+import graphviz 
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import precision_score
+from sklearn.metrics import recall_score
+
+
+battles = pd.read_csv('battles.csv')
+deaths = pd.read_csv('character-deaths.csv')
+predictions = pd.read_csv('character-predictions.csv')
+
+# 轉換預測欄位之數值
+deaths['Death Year'] = deaths['Death Year'].apply(lambda x: 0 if pd.isnull(x) else 1)
+
+# 轉換欄位之缺漏值
+deaths['Book Intro Chapter'] = deaths['Book Intro Chapter'].apply(lambda x: -1 if pd.isnull(x) else x)
+
+# 將 Allegiances 欄位轉為 dummy 特徵，並合併回到 deaths 中
+Allegiances = pd.get_dummies(deaths.Allegiances)
+deaths = pd.merge(deaths, Allegiances, left_index=True, right_index=True)
+
+# 設定預測因子、訓練集與標籤集
+predictor = ['Book Intro Chapter', 'Gender', 'Nobility', 'Arryn', 'Baratheon', 'Greyjoy', 'House Arryn', 
+             'House Baratheon', 'House Greyjoy', 'House Lannister', 'House Martell', 'House Stark', 'House Targaryen', 
+             'House Tully', 'House Tyrell', 'Lannister', 'Martell', 'Night\'s Watch', 'None', 'Stark', 'Targaryen', 
+             'Tully', 'Tyrell', 'Wildling', 'GoT', 'CoK', 'SoS', 'FfC', 'DwD']
+X = deaths[predictor]
+y = deaths['Death Year']
+
+# 用亂樹種子來切分資料，分成訓練集 (75%) 與測試集 (25%)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=100)
+
+# 建立決策樹模型，並進行預測
+clf = tree.DecisionTreeClassifier(criterion='gini', max_depth=9, min_samples_leaf =10, random_state=1)
+clf.fit(X_train, y_train)
+print('X_score: ', clf.score(X_train, y_train))
+print('y_score: ', clf.score(X_test, y_test))
+
+# 建立 confusion matrix
+y_predict = clf.predict(X_test)
+print('Confusion matrix: ')
+print(confusion_matrix(y_test, y_predict, labels=[1, 0]))
+
+# 計算 Precision, Recall, Accuracy 之數值
+tp, fn, fp, tn = confusion_matrix(y_test, y_predict, labels=[1, 0]).ravel()
+precision = tp / (tp+fp)
+recall = tp / (tp+fn)
+
+print('Precision_cal: ', tp / (tp+fp))
+print('Precision_fun: ', precision_score(y_test, y_predict))#, average='weighted'))
+print('Recall_cal: ', tp / (tp+fn))
+print('Recall_fun: ', recall_score(y_test, y_predict))#, average='weighted'))
+print('Accuracy_cal: ', (tp+tn) / (tn+fp+fn+tp))
+print('Accuracy_fun: ', accuracy_score(y_test, y_predict))
+print('F1: ', 2 * (precision * recall) / (precision + recall))
+
+# 匯出決策樹的圖
+dot_data = tree.export_graphviz(clf, out_file=None) 
+graph = graphviz.Source(dot_data) 
+graph.render('tree', format='png')
+
+
