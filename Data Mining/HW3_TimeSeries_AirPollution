@@ -1,0 +1,199 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Mon Nov  2 20:45:51 2020
+
+@author: User
+"""
+
+import pandas as pd
+from datetime import datetime
+import numpy as np
+from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_absolute_error
+
+data_2019 = pd.read_csv('新竹_2019.csv', header=0)
+data_2019 = data_2019.drop([0]).reset_index(drop=True)
+data_2019 = data_2019.rename(columns=lambda x: x.rstrip())
+
+data_2019['日期'] = data_2019['日期'].apply(lambda x: datetime.strptime(x, '%Y/%m/%d %H:%M'))
+
+### 取 10、11、12 月
+mask = pd.Series(pd.DatetimeIndex(data_2019['日期']).month.tolist())
+data = data_2019[(mask == 10) | (mask == 11) | (mask == 12)].reset_index(drop=True)
+data
+
+### 無效值、缺值處理
+for i in range(24):
+    data[str(i)] = data[str(i)].map(lambda x: np.nan if ('#' in x) or ('x' in x) or ('A' in x) or ('*' in x) else x)
+
+### 欄位處理
+data['日期'] = pd.DatetimeIndex(data['日期']).date
+data = data.drop(columns=['測站'])
+data.columns = data.columns.rename('時間')
+data['測項'] = data['測項'].apply(lambda x: x.rstrip())
+
+### 資料欄位格式轉換
+data_new = data[0:18]
+data_new = data_new.set_index('測項')
+data_new.columns = data_new.columns.rename('時間')
+date = data_new['日期'][0].strftime('%Y/%m/%d')
+data_new = data_new.drop(columns=['日期'])
+data_new = data_new.add_prefix(date+'/')
+
+for i in range(1, int(len(data)/18)):
+    merge = data[i*18:(i+1)*18]
+    merge = merge.set_index('測項')
+    merge.columns = merge.columns.rename('時間')
+    date = merge['日期'][0].strftime('%Y/%m/%d')
+    merge = merge.drop(columns=['日期'])
+    merge = merge.add_prefix(date+'/')
+    data_new = pd.concat([data_new, merge], axis=1)
+
+data_new = data_new.astype(float)
+
+# merge 資料成寬資料
+for i in range(18):
+    if sum(data_new[i:(i+1)].isnull().values.flatten()) == 0:
+        continue
+    front = 0
+    back = 0
+    for j in range(data_new.shape[1]):
+        if not pd.isnull(data_new.iloc[i:(i+1), j:(j+1)].values.flatten()[0]):
+            front = data_new.iloc[i:(i+1), j:(j+1)].values.flatten()[0]
+        # 空值，往後找
+        else:
+            k = 1
+            while pd.isnull(data_new.iloc[i:(i+1), j+k:(j+1)+k].values.flatten()[0]):
+                k += 1
+            back = data_new.iloc[i:(i+1), j+k:(j+1)+k].values.flatten()[0]
+            aver = (front+back)/2
+            data_new.iloc[i:(i+1), j:(j+1)+k-1] = aver
+
+### train test 資料處理
+test = data_new.copy()
+train = data_new.copy()
+for i in list(data_new.columns):
+    if not (('2019/10' in i) or ('2019/11' in i)):
+        train = train.drop(columns=[i])
+    else:
+        test = test.drop(columns=[i])
+
+### 取特定條件資料函式
+def get_rolling_data(data, n, k):    # 從 0 開始每次取 n 值，預測第 k 值
+    X = []
+    y = []
+    for i in range(data.shape[1]-n):
+        X.append(data.iloc[:, i:i+n].values.flatten())
+    target = data[data.index == 'PM2.5']
+    for i in range(k, data.shape[1]):
+        y.append(target.iloc[:, i:i+1].values.flatten())
+    X = X[:len(y)]
+    return np.array(X), np.array(y)
+
+
+######## 未來第一個小時、PM2.5 (Linear、Random)
+train_pm = train[train.index == 'PM2.5']
+test_pm = test[test.index == 'PM2.5']
+
+X_train_first_pm, y_train_first_pm = get_rolling_data(train_pm, 6, 6)
+X_test_first_pm, y_test_first_pm = get_rolling_data(test_pm, 6, 6)
+
+### linear regression
+reg = LinearRegression().fit(X_train_first_pm, y_train_first_pm)
+print('train_first_pm: ', reg.score(X_train_first_pm, y_train_first_pm))
+print('test_first_pm: ', reg.score(X_test_first_pm, y_test_first_pm))
+y_pred = reg.predict(X_test_first_pm)
+print('MAE: ', mean_absolute_error(y_test_first_pm, y_pred))
+
+### Random forest
+rfc = RandomForestRegressor(criterion='mae', 
+                             n_estimators=1000, 
+                             min_samples_split=12, 
+                             oob_score=True, 
+                             random_state=1, 
+                             n_jobs=-1)
+rfc.fit(X_train_first_pm, y_train_first_pm)     
+
+print('train_first_pm: ', rfc.score(X_train_first_pm, y_train_first_pm))
+print('test_first_pm: ', rfc.score(X_test_first_pm, y_test_first_pm))
+y_pred = rfc.predict(X_test_first_pm)
+print('MAE: ', mean_absolute_error(y_test_first_pm, y_pred))
+
+
+######## 未來第六個小時、PM2.5 (Linear、Random)
+X_train_six_pm, y_train_six_pm = get_rolling_data(train_pm, 6, 11)
+X_test_six_pm, y_test_six_pm = get_rolling_data(test_pm, 6, 11)
+
+### linear regression
+reg = LinearRegression().fit(X_train_six_pm, y_train_six_pm)
+print('train_six_pm: ', reg.score(X_train_six_pm, y_train_six_pm))
+print('test_six_pm: ', reg.score(X_test_six_pm, y_test_six_pm))
+y_pred = reg.predict(X_test_six_pm)
+print('MAE: ', mean_absolute_error(y_test_six_pm, y_pred))
+
+### Random forest
+rfc = RandomForestRegressor(criterion='mae', 
+                             n_estimators=1000, 
+                             min_samples_split=12, 
+                             random_state=1, 
+                             n_jobs=-1)
+rfc.fit(X_train_six_pm, y_train_six_pm)     
+
+print('train_six_pm: ', rfc.score(X_train_six_pm, y_train_six_pm))
+print('test_six_pm: ', rfc.score(X_test_six_pm, y_test_six_pm))
+y_pred = rfc.predict(X_test_six_pm)
+print('MAE: ', mean_absolute_error(y_test_six_pm, y_pred))
+
+
+######## 未來第一個小時、所有屬性 (Linear、Random)
+X_train_first, y_train_first = get_rolling_data(train, 6, 6)
+X_test_first, y_test_first = get_rolling_data(test, 6, 6)
+
+### linear regression
+reg = LinearRegression().fit(X_train_first, y_train_first)
+print('train_first: ', reg.score(X_train_first, y_train_first))
+print('test_first: ', reg.score(X_test_first, y_test_first))
+y_pred = reg.predict(X_test_first)
+print('MAE: ', mean_absolute_error(y_test_first, y_pred))
+
+### Random forest
+rfc = RandomForestRegressor(criterion='mae', 
+                             n_estimators=100, 
+                             min_samples_split=12, 
+                             max_depth=20, 
+                             random_state=1, 
+                             n_jobs=-1)
+
+rfc.fit(X_train_first, y_train_first)
+print('train_first: ', rfc.score(X_train_first, y_train_first))
+print('test_first: ', rfc.score(X_test_first, y_test_first))
+y_pred = rfc.predict(X_test_first)
+print('MAE: ', mean_absolute_error(y_test_first, y_pred))
+
+
+######## 未來第六個小時、所有屬性 (Linear、Random)
+X_train_six, y_train_six = get_rolling_data(train, 6, 11)
+X_test_six, y_test_six = get_rolling_data(test, 6, 11)
+
+### linear regression
+reg = LinearRegression().fit(X_train_six, y_train_six)
+print('train_six: ', reg.score(X_train_six, y_train_six))
+print('test_six: ', reg.score(X_test_six, y_test_six))
+y_pred = reg.predict(X_test_six)
+print('MAE: ', mean_absolute_error(y_test_six, y_pred))
+
+### Random forest
+rfc = RandomForestRegressor(criterion='mae', 
+                            n_estimators=100, 
+                            min_samples_split=12, 
+                            max_depth=20,
+                            random_state=1, 
+                            n_jobs=-1)
+
+rfc.fit(X_train_six, y_train_six)
+print('train_six: ', rfc.score(X_train_six, y_train_six))
+print('test_six: ', rfc.score(X_test_six, y_test_six))
+y_pred = rfc.predict(X_test_six)
+print('MAE: ', mean_absolute_error(y_test_six, y_pred))
+
